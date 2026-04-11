@@ -15,20 +15,39 @@ Before starting, detect workspace type:
 - If `operations/` directory exists at workspace root → **Type 2** (single-project workspace)
 
 ## Inputs
-- Identification of which email was sent: subject line, date, recipient, or reference to a draft OUT-### ID
+- Usually none required — the command auto-detects the most recent sent email
+- Optional override: subject line, date, recipient, or draft `OUT-###` ID (used only when auto-detection is ambiguous)
 - Optional: project tag(s) (Type 2) or case selection (Type 3)
 
 ## Steps
 
 ### Step 1 — Identify What Was Sent
 
-Ask user which email was sent. Accept any of:
+**Default (auto-detect):** Do NOT ask the user anything. Instead:
+
+1. Fetch the most recent sent email automatically:
+   ```
+   gmail_search(query="in:sent from:me", max_results=1)
+   ```
+2. Check the workspace Drafts folder for `.docx` draft files:
+   - Type 2: `operations/Drafts/`
+   - Type 3: `Cases/<CaseName>/Drafts/` (check all case Drafts folders)
+3. Match the Gmail result against local drafts:
+   - **Exactly one draft exists** — assume it corresponds to the sent email. Confirm by comparing subject/recipient if possible, then proceed automatically.
+   - **Multiple drafts exist but one clearly matches** the sent email (subject line or recipient match) — use that draft and proceed automatically.
+   - **No drafts exist** — proceed with the sent email directly (no draft to match).
+
+**Fallback (ask user):** Only prompt the user to identify the email if:
+- Multiple drafts exist and none obviously match the most recent sent email, OR
+- The most recent sent email does not appear to relate to any workspace draft and the user provided an `OUT-###` or other identifier in their command invocation
+
+When falling back, accept any of:
 - Subject line or keyword
 - Date sent
 - Recipient name
 - Draft reference `OUT-###` ID
 
-Search Gmail sent folder using `gmail_search`:
+And search Gmail accordingly:
 ```
 gmail_search(query="in:sent from:me subject:<subject> after:<date>")
 ```
