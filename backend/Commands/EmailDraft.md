@@ -108,6 +108,7 @@ Create a Python script using `python-docx` that generates the `.docx` with:
   - Subject: `<subject>`
   - Reference IDs: `<relevant DOC/EMAIL IDs>`
 - **Body text** with proper paragraph formatting
+  - **NO empty separator paragraphs between body blocks.** Do not insert blank `""` strings (or `doc.add_paragraph()` with no text) between consecutive non-empty body lines — e.g. between the salutation, numbered points, "Thank you" close, "Kind regards,", and the signature. Each body line is a single `add_paragraph(text)` call and nothing more. When the `.docx` is pasted into Gmail's compose window, Gmail wraps every Word paragraph in its own `<p>` element with default top/bottom margin, which produces correct visible paragraph spacing in the rendered email automatically. Adding empty paragraphs in the body causes **double-spacing in the sent email** and a tight-vs-loose discrepancy between the `.docx` record and what the recipient sees. This rule applies to body paragraphs only — the metadata header block (To/From/Date/Subject/Reference IDs) may keep its existing separator paragraphs since it is not pasted into Gmail.
 - Save to the determined path
 
 Run the script to generate the `.docx` file.
