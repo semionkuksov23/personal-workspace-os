@@ -90,7 +90,7 @@ For each new (non-duplicate) email in chronological order:
    ```
 3. **List attachments** with `gmail_list_attachments(message_id=...)`.
 4. **Filter attachments**:
-   - **DELETE/SKIP**: Images < 10KB (logos/signatures), files named `image001.*`, `image002.*`, `logo.*`, `signature.*`
+   - **DELETE/SKIP (corporate logos & email-signature graphics only)**: images < 10KB, files named `image001.*`, `image002.*`, `logo.*`, `signature.*`, and inline branding/signature graphics such as Outlook `cid:` images and social-media icons
    - **KEEP & DOWNLOAD**: PDFs, DOCX, XLSX, EML, TXT, CSVs, images > 10KB, and any other substantive file types
 5. **Download kept attachments** to the filing pack directory using `gmail_download_attachment`.
 6. **Post-download dedup**: After downloading each attachment, scan the workspace's filing directories for any existing file with the same name and size. If a duplicate is found:
@@ -98,6 +98,11 @@ For each new (non-duplicate) email in chronological order:
    - Log: "Skipped `<filename>` — duplicate of existing file at `<path>`"
    This catches attachments forwarded across different threads.
 7. **OCR check for PDFs**: For each downloaded PDF, check if it is scanned (no text layer) using PyMuPDF (`fitz`) page text extraction. If all pages are whitespace-only, run OCR using the llm-enhanced-ocr skill and save output to `operations/Operations/OCR/<filename>_OCR.txt` (Type 2) or the equivalent workspace OCR path.
+8. **Open & analyse every kept attachment — DEFAULT BEHAVIOUR, DO NOT SKIP.** Downloading is not the same as reading. After download, open each substantive attachment and read its actual contents *before* reporting on the email:
+   - **How to open**: PDFs and images → the Read tool (it renders both PDFs and images visually); scanned PDFs → use the OCR text from sub-step 7; DOCX/XLSX → read with python-docx / openpyxl (or convert, then read).
+   - **What to extract**: the facts that matter to the matter. For an **invoice** — invoice number, date, every line-item description, net + VAT + total, payments received, balance due, and payment deadline; **cross-check the amount and the work described against any prior quote or earlier invoice for the same task and flag any discrepancy.** For a **letter/decision** — author, date, the decision, and the stated reasons. For a **statement/schedule** — the key figures.
+   - **Where it goes**: fold the analysis into the transcript, the `DOC-###` FileAnalysis **Summary**, and your read-out to the user. **Never describe an attachment as merely "downloaded" or "attached" without stating what is inside it.**
+   - **Only skip the analysis when**: (a) the user explicitly told you not to open attachments on this run, or (b) the file is a corporate logo / email-signature graphic — which sub-step 4 has already removed.
 
 ### Step 5 — Assign Document IDs
 
