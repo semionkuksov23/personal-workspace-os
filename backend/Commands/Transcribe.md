@@ -1,24 +1,57 @@
 # Command: Transcribe
 
 ## Purpose
-Transcribe audio/video recordings using faster-whisper on CUDA with quality profiles, speaker diarization, mandatory monitoring, and automated QC — producing transcripts reliable enough for deep legal, financial, and strategic analysis.
+Transcribe audio/video recordings using faster-whisper on CUDA with quality profiles, optional speaker diarization, mandatory monitoring, and automated QC — producing transcripts reliable enough for deep legal, financial, and strategic analysis.
 
 ## Inputs
 - Audio/video file path (`.mp4`, `.m4a`, `.mp3`, `.wav`, `.ogg`, `.webm`, `.mkv`, `.flac`)
 - Language(s) — asked in Step 1
+- Speaker diarization on/off (+ optional speaker count) — asked in Step 1
 - Description/label — asked in Step 1
 - Quality profile — chosen in Step 2
 
 ---
 
-## Step 1 — Validate & Ask Language
+## ⚠️ Architecture rule (read first) — transcription and diarization are TWO SEPARATE PROCESSES
+
+Diarization (speaker labelling) MUST run in its **own Python process, after the
+transcription process has fully exited** — never inline in the transcription script.
+
+**Why (structural, not stylistic):** whisper's GPU teardown — `del model` /
+`torch.cuda.empty_cache()` — can **hard-crash the Python process on Windows (exit
+code 127)**. If diarization sits inline (same process, after that teardown), the
+crash silently skips speaker labelling: the transcript saves fine but every line
+stays `speaker: "UNKNOWN"`. This is not hypothetical — it wiped the speaker labels
+on a 43-minute meeting on **3 Jun 2026** even though the transcript itself was
+perfect. Running diarization as a second process means the whisper-teardown crash
+can never reach it: the fresh process gets a clean CUDA/CPU context with the GPU
+already freed by the exited transcription process.
+
+So the pipeline is always two phases:
+- **Phase A — transcription** (`backend/Scripts/transcribe_<STEM>.py`): whisper + save
+  + keep the 16 kHz WAV + exit. Never imports pyannote. Never calls
+  `del model`/`empty_cache()`.
+- **Phase B — diarization** (`backend/Scripts/diarise_existing.py`, only if `DIARIZE`):
+  a separate process, run after Phase A exits, that adds speaker labels to the
+  already-saved transcript.
+
+---
+
+## Step 1 — Validate, Ask Language & Speakers
 
 1. Validate file exists and has a supported extension.
 2. Get duration via `ffprobe -v error -show_entries format=duration -of csv=p=0 "<file>"`.
 3. **Ask user**: "What language(s) are present in the recording?"
    - Single language → set `language` param (e.g., `"en"`, `"ru"`)
    - Mixed languages → set `language=None` (auto-detect per segment)
-4. **Ask user**: Short description/label for file naming (or derive from filename if obvious).
+4. **Ask user**: "Enable speaker diarization? (labels each line with who spoke — SPEAKER_01, SPEAKER_02, …)"
+   - This is **optional and OFF by default**. State the trade-offs:
+     - Adds processing time. On this machine pyannote runs on **CPU** (torch is the CPU build), so diarization roughly adds ~0.5–1.0x of the audio duration on long calls. Transcription itself is unaffected (whisper uses CUDA via ctranslate2).
+     - Requires `pyannote.audio` (installed) **and** a Hugging Face `HF_TOKEN` with the gated pyannote models accepted — see **Diarization Setup** below.
+   - If **yes**, also ask: "How many distinct speakers? (leave blank to auto-detect)" → set `num_speakers` when known (improves accuracy).
+   - If **yes but `HF_TOKEN` is not set**, point the user to the Diarization Setup section and ask whether to (a) proceed anyway, producing `speaker: "UNKNOWN"`, or (b) pause until the token is configured.
+   - Record the result as a `DIARIZE` flag (True/False). It controls whether Phase B (Step 4) runs at all.
+5. **Ask user**: Short description/label for file naming (or derive from filename if obvious).
 
 ## Step 2 — Comparative Table
 
@@ -51,7 +84,9 @@ Present options with estimated times calculated from actual audio duration. **Ta
 
 Show actual estimated minutes based on file duration. Ask user to choose.
 
-## Step 3 — Generate & Run Script
+**Note on diarization time:** the estimates above are for transcription (Phase A) only. If diarization was enabled in Step 1, the separate Phase-B process adds roughly **+0.5–1.0x duration** (CPU pyannote) to the total wall-clock. Phase B runs on the CPU, so it can overlap a *different* recording's Phase-A whisper run (GPU) — but two CPU diarizations should not run at once (serialize them).
+
+## Step 3 — Generate & Run Phase-A Transcription Script
 
 Generate Python script at `backend/Scripts/transcribe_<STEM>.py`.
 
@@ -97,7 +132,8 @@ def seg_to_dict(seg, source="base", lang=None):
         "no_speech_prob": seg.no_speech_prob,
         "source": source,
         "words": words,
-        "detected_language": lang
+        "detected_language": lang,
+        "speaker": "UNKNOWN"
     }
 
 def get_duration(path):
@@ -131,49 +167,196 @@ Skip any segment where:
 
 ### Output Files (all profiles)
 
-- `.txt` — timestamped text: `[HH:MM:SS --> HH:MM:SS] text`
+- `.txt` — timestamped text: `[HH:MM:SS --> HH:MM:SS] [SPEAKER] text`
 - `.srt` — standard subtitles
-- `.json` — full metadata with word-level timestamps, per-segment `detected_language`
+- `.json` — full metadata with word-level timestamps, per-segment `detected_language`, per-segment `speaker`
 
 Run script in background via `run_in_background=true`.
 
-### Script Architecture (CRITICAL — save before cleanup)
+### Phase-A execution order (CRITICAL — save, keep the WAV, then exit clean)
 
-The generated script MUST follow this execution order:
+The generated transcription script MUST follow this order, and MUST NOT do diarization:
 
-1. Run transcription passes (1-3 depending on profile)
-2. Set `speaker: "UNKNOWN"` on all segments
-3. Merge & deduplicate (remove 3+ consecutive identical texts)
-4. **SAVE all outputs** (.txt, .srt, .json) and **print QC summary**
-5. Unload whisper model — wrap in try/except: `try: del model` then `torch.cuda.empty_cache()` (may crash on some systems)
-6. Attempt diarization (Step 4) — if successful, re-save all three output files with real speaker labels
+1. Extract a 16 kHz mono WAV once (`_audio_16k.wav` in the output dir) and reuse it for both whisper passes.
+2. Run transcription passes (1-3 depending on profile).
+3. Set `speaker: "UNKNOWN"` on all segments.
+4. Merge & deduplicate (remove 3+ consecutive identical texts).
+5. **SAVE all outputs** (.txt, .srt, .json) and **print the QC summary**.
+6. **Keep `_audio_16k.wav` on disk** (Phase B reuses it) and **print a `[transcribed]` marker as the last line, then let the process exit.**
+   - Do **NOT** call `del model` / `torch.cuda.empty_cache()` — that is the exit-127
+     crash trigger and it is unnecessary: when the process exits, the OS reclaims all
+     GPU memory. A crash *during interpreter shutdown* is harmless because every output
+     is already on disk.
+   - The transcription script **never imports pyannote** and **never touches diarization**.
 
-**Why this order is mandatory**: `del model` and `torch.cuda.empty_cache()` can crash the Python process on Windows (exit code 127). pyannote may fail (no HF_TOKEN, import error, VRAM OOM). If outputs are saved only after these steps, a crash loses all transcription work. This happened on 23 Mar 2026 — three complete transcription passes (232 segments, ~2 min GPU) were lost twice because saves came after cleanup. Save FIRST, enhance SECOND.
+**Success signal for an orchestrator/monitor**: the presence of the output files +
+the `[transcribed]` line — **not** exit code 0 (the process may still segfault during
+CUDA shutdown after everything is saved; that is expected and harmless).
 
-## Step 4 — Speaker Diarization (POST-SAVE enhancement)
+**Why save-first + keep-WAV is mandatory**: a crash during model teardown must never
+lose transcription work (this happened on 23 Mar 2026 — three complete passes lost
+twice because saves came after cleanup), and Phase B needs the decoded WAV to avoid
+re-decoding. Save FIRST, keep the WAV, exit.
 
-**Pre-condition**: All outputs (.txt, .srt, .json) must already be saved with `speaker: "UNKNOWN"` from Step 3. Diarization is an enhancement — if it fails, the transcript is complete and usable.
+## Step 4 — Speaker Diarization (Phase B — SEPARATE PROCESS, OPTIONAL)
 
-After outputs are saved and whisper model is unloaded:
+**Runs only when `DIARIZE` is True** (user opted in at Step 1), and **only after the
+Phase-A transcription process has fully exited.** If `DIARIZE` is False, skip this
+step entirely — the transcript is already complete with `speaker: "UNKNOWN"`, and
+pyannote is never imported anywhere.
 
-1. Wrap the entire diarization block in try/except. On any failure, print a message and continue — outputs are already saved.
-2. Run **pyannote.audio** diarization pipeline on the audio file (CUDA).
-3. Align speaker labels with transcript segments by timestamp overlap.
-4. Add `speaker` field to each segment in the `.json` (e.g., `"SPEAKER_01"`, `"SPEAKER_02"`).
-5. **Re-save** all three output files (.txt, .srt, .json) with updated speaker labels.
-6. If pyannote fails or is unavailable, outputs remain saved with `speaker: "UNKNOWN"` — note this in QC output.
+Diarization runs as its **own Python process** — never inline in the transcription
+script (see the Architecture rule at the top for why). Because it is a fresh process
+with the GPU already freed by the exited Phase-A process, the whisper-teardown crash
+cannot reach it.
 
-**VRAM management is critical**: whisper and pyannote cannot coexist in 8 GB VRAM simultaneously.
+**Pre-conditions**:
+- Phase A saved all outputs (.txt, .srt, .json) with `speaker: "UNKNOWN"`.
+- Phase A left `_audio_16k.wav` on disk in the output dir.
+- The Phase-A process has exited (GPU freed).
 
-## Step 5 — Monitor Every 2 Minutes (MANDATORY)
+**How to run** — invoke the canonical standalone diarizer as a separate background process:
 
-After launching script in background:
+```
+python backend/Scripts/diarise_existing.py <output_dir> <stem> [num_speakers]
+```
 
-1. Check `TaskOutput` every **2 minutes** — no exceptions, even for 1-hour transcriptions.
+It loads `<output_dir>/<stem>.json` + `<output_dir>/_audio_16k.wav`, runs pyannote
+(CUDA if a CUDA torch build is present, else CPU — falls back to CPU automatically),
+aligns speaker turns to segments by max-overlap, re-saves all three outputs with real
+speaker labels, deletes the WAV, and prints `[done]`. If it fails, the transcript is
+already complete and usable with `speaker: "UNKNOWN"`.
+
+**Success signal**: `[done]` in its log (and `[diarization] complete: N speakers`) —
+not the exit code.
+
+**Serialization**: pyannote on CPU is heavy. Phase B may overlap a *different*
+recording's Phase-A whisper (GPU vs CPU — no conflict), but **never run two CPU
+diarizations at once** — queue them.
+
+### Canonical Phase-B diarizer (pyannote 4.x — torchcodec-free) — `backend/Scripts/diarise_existing.py`
+
+This standalone script IS Phase B. Generated transcription scripts call it as a
+separate process; never re-embed diarization into the transcription script. The
+installed pyannote is **4.x** (`token=` not `use_auth_token=`); its default decoder
+(`torchcodec`) cannot load on this machine, so we feed an in-memory waveform decoded
+from the saved WAV.
+
+```python
+"""
+Standalone speaker-diarisation pass for an ALREADY-transcribed meeting.
+Decoupled from whisper so a whisper GPU-cleanup crash cannot block labelling.
+Usage: python diarise_existing.py <output_dir> <stem> [num_speakers]
+"""
+import os, sys, json
+sys.stdout.reconfigure(encoding="utf-8")
+
+# cuBLAS DLL fix (MUST precede torch/pyannote import)
+_cublas_dir = os.path.join(os.environ["LOCALAPPDATA"],
+    r"Python\pythoncore-3.14-64\Lib\site-packages\nvidia\cublas\bin")
+if os.path.isdir(_cublas_dir):
+    os.environ["PATH"] = _cublas_dir + os.pathsep + os.environ["PATH"]
+    os.add_dll_directory(_cublas_dir)
+
+OUTPUT_DIR   = sys.argv[1]
+STEM         = sys.argv[2]
+NUM_SPEAKERS = int(sys.argv[3]) if len(sys.argv) > 3 else None
+AUDIO_WAV    = os.path.join(OUTPUT_DIR, "_audio_16k.wav")
+base         = os.path.join(OUTPUT_DIR, STEM)
+
+def format_ts(s):
+    h=int(s//3600); m=int((s%3600)//60); sec=int(s%60); ms=int((s-int(s))*1000)
+    return f"{h:02d}:{m:02d}:{sec:02d},{ms:03d}"
+def format_ts_txt(s):
+    h=int(s//3600); m=int((s%3600)//60); sec=int(s%60)
+    return f"{h:02d}:{m:02d}:{sec:02d}"
+
+with open(base + ".json", encoding="utf-8") as f:
+    data = json.load(f)
+all_segments = data["segments"]
+
+def save_outputs():
+    with open(base+".txt","w",encoding="utf-8") as f:
+        for s in all_segments:
+            f.write(f"[{format_ts_txt(s['start'])} --> {format_ts_txt(s['end'])}] [{s['speaker']}] {s['text']}\n")
+    with open(base+".srt","w",encoding="utf-8") as f:
+        for i,s in enumerate(all_segments,1):
+            f.write(f"{i}\n{format_ts(s['start'])} --> {format_ts(s['end'])}\n[{s['speaker']}] {s['text']}\n\n")
+    data["segments"]=all_segments; data["diarized"]=True
+    with open(base+".json","w",encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+import torch, soundfile as sf
+from pyannote.audio import Pipeline
+
+hf_token = os.environ.get("HF_TOKEN")
+if not hf_token:
+    print("HF_TOKEN not set — cannot diarise. Outputs keep speaker=UNKNOWN."); sys.exit(2)
+
+audio_np, sr = sf.read(AUDIO_WAV, dtype="float32")
+if audio_np.ndim > 1: audio_np = audio_np.mean(axis=1)
+waveform = torch.from_numpy(audio_np).unsqueeze(0)
+
+print("[diarization] loading pipeline ...", flush=True)
+pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", token=hf_token)
+device = "cuda" if torch.cuda.is_available() else "cpu"
+try:
+    pipeline.to(torch.device(device))
+except Exception as e:
+    print(f"[diarization] GPU move failed ({e}); CPU fallback", flush=True); device="cpu"; pipeline.to(torch.device("cpu"))
+print(f"[diarization] running on {device} ...", flush=True)
+
+diar_out = pipeline({"waveform": waveform, "sample_rate": sr}, num_speakers=NUM_SPEAKERS) if NUM_SPEAKERS else pipeline({"waveform": waveform, "sample_rate": sr})
+diarization = diar_out.speaker_diarization
+turns = [(t.start, t.end, spk) for t,_,spk in diarization.itertracks(yield_label=True)]
+for seg in all_segments:
+    best, best_ov = "UNKNOWN", 0.0
+    for s,e,spk in turns:
+        ov = max(0.0, min(seg["end"], e) - max(seg["start"], s))
+        if ov > best_ov: best_ov, best = ov, spk
+    seg["speaker"] = best
+
+save_outputs()
+n_spk = len({s["speaker"] for s in all_segments if s["speaker"] != "UNKNOWN"})
+print(f"[diarization] complete: {n_spk} speakers. Outputs re-saved.", flush=True)
+try: os.remove(AUDIO_WAV)
+except OSError: pass
+print("[done]", flush=True)
+```
+
+> Model note: pyannote v4 loads `"pyannote/speaker-diarization-community-1"`. The older `"pyannote/speaker-diarization-3.1"` is a v3 fallback; both require accepting their HF terms.
+
+### Diarization Setup (one-time — required only if you enable diarization)
+
+> Already completed on this machine (2026-06-01): HF_TOKEN saved + all three pyannote models accepted. Steps below are for reference / re-setup on a new machine.
+
+Diarization needs three things. The Python packages are already installed; the other two are one-time manual steps only the user can perform:
+
+1. **Python packages** — `pyannote.audio` (4.0.4) + `soundfile` installed via `pip` (already done on this machine). `torchcodec` is intentionally **bypassed**, so its load failure is harmless.
+2. **Hugging Face token** — create a free account at https://huggingface.co, then generate a *read* token at https://huggingface.co/settings/tokens. Make it persistent so future transcription scripts can see it:
+   ```
+   setx HF_TOKEN "hf_xxxxxxxxxxxxxxxxx"
+   ```
+   `setx` only affects **future** processes — open a new terminal (and restart Claude Code) after running it.
+3. **Accept the gated-model terms** (one click each, while logged into Hugging Face):
+   - https://huggingface.co/pyannote/speaker-diarization-community-1  (the model pyannote v4 actually loads)
+   - https://huggingface.co/pyannote/segmentation-3.0
+   - https://huggingface.co/pyannote/speaker-diarization-3.1  (only needed for the v3 fallback)
+
+   The pipeline returns 401/403 until the required models are accepted.
+
+Optional speed-up: diarization runs on **CPU** here because `torch` is the CPU build. Installing a CUDA torch build (cu128 for the RTX 5070) would move it to GPU and make Phase B dramatically faster, but it is a multi-GB change and is **not required** — ask the user before doing it.
+
+## Step 5 — Monitor Every 2 Minutes (MANDATORY — both phases)
+
+After launching each script in background:
+
+1. Check `TaskOutput` every **2 minutes** — no exceptions, even for 1-hour transcriptions. Monitor **both** Phase A (whisper) and Phase B (diarization).
 2. Look for: tracebacks, CUDA OOM, process hangs (no new output for >3 min), stalled progress.
-3. Report brief status to user at each check (e.g., "Pass 1 at segment 150, ~12 min processed").
+3. Report brief status to user at each check (e.g., "Pass 1 at segment 150, ~12 min processed"; "diarization running on cpu").
 4. If error: diagnose, fix script, re-run.
-5. Continue until script completes.
+5. **Phase A is complete when the `[transcribed]` marker is printed AND the output files exist** — do not rely on exit code 0 (CUDA-shutdown segfaults after save are expected). Then launch Phase B (if `DIARIZE`) as a separate process.
+6. **Phase B is complete when `[done]` is printed** (and `[diarization] complete: N speakers`). On Phase-B failure, the transcript stays valid with `speaker: "UNKNOWN"`.
 
 ## Step 6 — Post-Transcription QC Loop (MANDATORY)
 
@@ -191,6 +374,7 @@ After launching script in background:
 | 6 | **Low-confidence** < 15% | Segments with `avg_logprob < -1.0` | Informational — report to user |
 | 7 | **Word confidence** | Flag segments where avg word probability < 0.5 | Report for manual review |
 | 8 | **Semantic spot-check** | Agent reads 10 evenly-spaced excerpts and flags garbled/nonsensical text | Agent fixes or flags for user |
+| 9 | **Speaker labels** (if `DIARIZE`) | `.txt`/`.json` carry real `SPEAKER_xx` labels, not all `UNKNOWN` | If all `UNKNOWN`, Phase B did not run/failed — re-run `diarise_existing.py` |
 
 ### Fix Loop
 
@@ -228,7 +412,7 @@ Save to `operations/Records/YYYY-MM-DD_<Description>/` containing `.txt`, `.srt`
 - **Source**: <original filename> (deleted after transcription)
 - **Location**: <output directory path>
 - **Files**: .txt, .srt, .json
-- **Language**: <lang> | **Speakers**: <N> identified
+- **Language**: <lang> | **Speakers**: <N> identified (or "diarization off")
 - **Duration**: <X> min | **Coverage**: <X>%
 - **Model**: faster-whisper <model> | **Profile**: <name>
 - **QC**: PASS | **Diarization**: Yes/No
@@ -239,5 +423,5 @@ Save to `operations/Records/YYYY-MM-DD_<Description>/` containing `.txt`, `.srt`
 
 ```
 ### YYYY-MM-DD
-- [DOC-###] Audio transcribed: <Description>. <duration> min, <model>, <profile>, coverage <X>%, <N> speakers. Original deleted. [Project: <Name>]
+- [DOC-###] Audio transcribed: <Description>. <duration> min, <model>, <profile>, coverage <X>%, <N> speakers (or diarization off). Original deleted. [Project: <Name>]
 ```
