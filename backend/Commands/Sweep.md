@@ -7,7 +7,7 @@ Run deterministic intake and filing across the workspace.
 - Read `operations/Context/Current/General.md` and confirm active projects list.
 
 ## Discovery Scope
-- `Workspaces/Template/` root
+- the workspace root (the folder that contains `backend/` and `operations/`)
 - `operations/Inbox/`
 - `operations/Drafts/`
 - `operations/Operations/`
@@ -25,6 +25,8 @@ Run deterministic intake and filing across the workspace.
    - research -> `operations/Research/`
    - admin -> `operations/Admin/`
 4. Move files (do not duplicate) unless user requests otherwise.
+   - **Clear the root.** When the sweep runs, EVERY file sitting in the workspace root is moved out to its proper home per the mapping above — the root is never a resting place for files.
+   - **Exception — audio/video recordings** (`.mp4` `.m4a` `.mp3` `.wav` `.ogg` `.webm` `.mkv` `.flac` `.aac` `.wma` `.opus`): do NOT move or delete a recording here. Leave it in place and hand it to the `Transcribe` command, which transcribes it and then deletes the original per its Step 7 protocol (explicitly ask permission to delete after the transcript — UNLESS the user pre-authorized deletion when invoking the command, in which case delete without asking). The recording stays put until that protocol has run.
 5. Assign stable IDs (DOC/EMAIL/OUT/ISSUE/TASK).
 6. Update:
    - `operations/Context/Current/ChronologyCurrent.md`

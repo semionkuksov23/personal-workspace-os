@@ -394,9 +394,10 @@ if still failing after 3 rounds → report to user, ask whether to proceed
 
 **Only after QC passes** (or user accepts remaining issues):
 
-1. Confirm with user: "QC passed. Delete original recording at `<path>`?"
-2. This is a **Red operation** per safety-guard — always confirm unless PermitAll active.
-3. If declined, leave file and note in chronology.
+1. **Default — explicitly ask permission.** Confirm with user: "QC passed. Delete original recording at `<path>`?" The original recording is the irreplaceable source; never delete it without a clear go-ahead.
+2. **Exception — pre-authorized deletion.** If the user already told you to delete the recording when they first invoked the command (e.g. "transcribe this and delete it after", "delete it once you're satisfied with the quality"), that standing instruction holds: once QC passes, **proceed to delete WITHOUT asking again** — do not re-prompt for something already authorized.
+3. This is a **Red operation** per safety-guard — always confirm UNLESS the user pre-authorized deletion (step 2) or PermitAll is active.
+4. If declined, or no authorization was given and the user does not respond, leave the file and note in chronology.
 
 ## Step 8 — File & Update Context
 
