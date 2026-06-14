@@ -46,7 +46,7 @@ So the pipeline is always two phases:
    - Mixed languages → set `language=None` (auto-detect per segment)
 4. **Ask user**: "Enable speaker diarization? (labels each line with who spoke — SPEAKER_01, SPEAKER_02, …)"
    - This is **optional and OFF by default**. State the trade-offs:
-     - Adds processing time. On this machine pyannote runs on **CPU** (torch is the CPU build), so diarization roughly adds ~0.5–1.0x of the audio duration on long calls. Transcription itself is unaffected (whisper uses CUDA via ctranslate2).
+     - Adds little time now — pyannote runs on **GPU** (CUDA torch cu128 installed 2026-06-13), so diarization adds only ~0.03–0.05x of the audio duration (a ~2-hour call diarizes in ~4 minutes). Transcription itself also uses CUDA (whisper via ctranslate2). Without a CUDA torch build it falls back to CPU (~0.5–1.0x).
      - Requires `pyannote.audio` (installed) **and** a Hugging Face `HF_TOKEN` with the gated pyannote models accepted — see **Diarization Setup** below.
    - If **yes**, also ask: "How many distinct speakers? (leave blank to auto-detect)" → set `num_speakers` when known (improves accuracy).
    - If **yes but `HF_TOKEN` is not set**, point the user to the Diarization Setup section and ask whether to (a) proceed anyway, producing `speaker: "UNKNOWN"`, or (b) pause until the token is configured.
@@ -84,7 +84,7 @@ Present options with estimated times calculated from actual audio duration. **Ta
 
 Show actual estimated minutes based on file duration. Ask user to choose.
 
-**Note on diarization time:** the estimates above are for transcription (Phase A) only. If diarization was enabled in Step 1, the separate Phase-B process adds roughly **+0.5–1.0x duration** (CPU pyannote) to the total wall-clock. Phase B runs on the CPU, so it can overlap a *different* recording's Phase-A whisper run (GPU) — but two CPU diarizations should not run at once (serialize them).
+**Note on diarization time:** the estimates above are for transcription (Phase A) only. If diarization was enabled in Step 1, the separate Phase-B process now runs on **GPU** (CUDA torch cu128, installed 2026-06-13) and adds only **~0.03–0.05x duration** (minutes) to the total wall-clock — a ~2-hour call diarizes in ~4 min. Because Phase B now also uses the GPU, run it AFTER Phase A has exited (sequential GPU use); do not run two GPU diarizations on the same card at once.
 
 ## Step 3 — Generate & Run Phase-A Transcription Script
 
@@ -230,9 +230,9 @@ already complete and usable with `speaker: "UNKNOWN"`.
 **Success signal**: `[done]` in its log (and `[diarization] complete: N speakers`) —
 not the exit code.
 
-**Serialization**: pyannote on CPU is heavy. Phase B may overlap a *different*
-recording's Phase-A whisper (GPU vs CPU — no conflict), but **never run two CPU
-diarizations at once** — queue them.
+**Serialization**: pyannote now runs on **GPU** (CUDA torch cu128). Run Phase B
+AFTER Phase A (whisper) has exited so the two share the GPU sequentially (peak
+diarization VRAM ~2.9 GB); do not run two GPU diarizations on the same card at once.
 
 ### Canonical Phase-B diarizer (pyannote 4.x — torchcodec-free) — `backend/Scripts/diarise_existing.py`
 
@@ -345,7 +345,7 @@ Diarization needs three things. The Python packages are already installed; the o
 
    The pipeline returns 401/403 until the required models are accepted.
 
-Optional speed-up: diarization runs on **CPU** here because `torch` is the CPU build. Installing a CUDA torch build (cu128 for the RTX 5070) would move it to GPU and make Phase B dramatically faster, but it is a multi-GB change and is **not required** — ask the user before doing it.
+Speed: diarization runs on **GPU**. A CUDA torch build (cu128 for the RTX 5070, sm_120; Python 3.14: torch 2.11.0+cu128 + torchaudio + torchvision) was installed 2026-06-13, so Phase B is dramatically faster — benchmark RTF ~0.036 (a ~2-hour call diarizes in ~4 min vs ~1–2 h on CPU). If the CUDA torch build is ever removed, pyannote falls back to CPU automatically.
 
 ## Step 5 — Monitor Every 2 Minutes (MANDATORY — both phases)
 
@@ -353,7 +353,7 @@ After launching each script in background:
 
 1. Check `TaskOutput` every **2 minutes** — no exceptions, even for 1-hour transcriptions. Monitor **both** Phase A (whisper) and Phase B (diarization).
 2. Look for: tracebacks, CUDA OOM, process hangs (no new output for >3 min), stalled progress.
-3. Report brief status to user at each check (e.g., "Pass 1 at segment 150, ~12 min processed"; "diarization running on cpu").
+3. Report brief status to user at each check (e.g., "Pass 1 at segment 150, ~12 min processed"; "diarization running on cuda").
 4. If error: diagnose, fix script, re-run.
 5. **Phase A is complete when the `[transcribed]` marker is printed AND the output files exist** — do not rely on exit code 0 (CUDA-shutdown segfaults after save are expected). Then launch Phase B (if `DIARIZE`) as a separate process.
 6. **Phase B is complete when `[done]` is printed** (and `[diarization] complete: N speakers`). On Phase-B failure, the transcript stays valid with `speaker: "UNKNOWN"`.
