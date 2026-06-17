@@ -1,5 +1,22 @@
 # Command: Transcribe
 
+> ## ⛔ BLOCKING PRECONDITION — ASK THE USER BEFORE STARTING (do not skip, do not default)
+>
+> Before generating or running ANY transcription script — before extracting audio, loading a
+> model, or launching a background job — you MUST ask the user and receive an explicit answer
+> to BOTH of these:
+>
+> 1. **Quality level / profile** — show the comparative table (Light · Balanced · Thorough ·
+>    Maximum) with time estimates for THIS file's duration, then let the user choose.
+> 2. **Diarization** — on or off; if on, ask how many distinct speakers.
+>
+> These two are **never assumed, never defaulted, never chosen "because it's best for them"** —
+> even under "just transcribe it", ultracode, autonomous, or PermitAll instructions. A
+> pre-authorization to do *other* steps (e.g. "delete the original afterwards") does **not**
+> authorize skipping these questions. (Language is also asked in Step 1.) Only the user's
+> explicit answers to the profile and diarization questions unlock script generation.
+
+
 ## Purpose
 Transcribe audio/video recordings using faster-whisper on CUDA with quality profiles, optional speaker diarization, mandatory monitoring, and automated QC — producing transcripts reliable enough for deep legal, financial, and strategic analysis.
 
