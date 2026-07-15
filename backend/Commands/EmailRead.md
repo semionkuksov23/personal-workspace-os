@@ -3,6 +3,13 @@
 ## Purpose
 Process incoming email from Gmail into the workspace's filing system with deduplication, attachment handling, and context file updates.
 
+## Auto-Filing — MANDATORY DEFAULT
+**Running EmailRead = filing.** Every email you read under this command MUST be filed automatically in the same run: create the filing pack, write the transcript(s), download & analyse substantive attachments, assign IDs, and update the context files (Steps 2–5). Do **not** stop after reading/displaying an email to ask permission to file, and do **not** end by offering to file — the filing has already happened.
+
+- **When the user names specific emails** (by sender, time, subject, date, or "all") — e.g. "run EmailRead on the 17:56 email from X" — treat that as the thread selection: **skip the Step-1 selection prompt and file those emails immediately.**
+- **Only ask "which threads?"** when the user gave a bare `EmailRead` with no selector AND the fetch returned multiple unrelated threads. Even then, once selected, filing proceeds automatically without a further confirmation.
+- Filing is non-destructive and needs no confirmation. The only things still worth surfacing mid-run are genuine judgment calls (e.g. an ambiguous case/project target in a multi-case workspace).
+
 ## Gmail Account
 All email operations in this workspace use: `semionkuksov23@gmail.com`
 When calling any gmail MCP tool, always pass `account="semionkuksov23@gmail.com"`.
@@ -45,7 +52,7 @@ Key points:
 - "Last Email" shows `YYYY-MM-DD HH:MM` (not date-only)
 - "Attachments" column shows count and dominant file type(s) at a glance so the user can decide what's worth processing
 
-Ask user which threads to process (by number, comma-separated list, or "all").
+Ask user which threads to process (by number, comma-separated list, or "all") — **but only if the user did not already specify which emails.** If the user named specific emails (sender / time / subject / date) or said "all", skip this prompt and proceed straight to filing them (see "Auto-Filing — MANDATORY DEFAULT" above).
 
 ### Step 2 — Deduplication
 
