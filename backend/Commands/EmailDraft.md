@@ -21,6 +21,19 @@ Before starting, detect workspace type:
 - Optional: reference to prior correspondence or document IDs
 - Optional: project tag(s) (Type 2) or case selection (Type 3)
 
+## One current draft per email
+
+Owner decision, 2026-09-07: during unfinished EmailDraft work, a requested change replaces the same email. Keep exactly one current email draft in its applicable Drafts folder.
+
+- Identify the email by its existing outgoing ID and drafting task. Changes to wording, subject, recipients or requested action do not by themselves create a new email or OUT ID.
+- Keep the canonical filename and reuse the OUT ID. Do not create `_prev_`, `_v2`, dated, backup or archived copies of the superseded unfinished email.
+- Prepare and read back the replacement in the workspace's approved temporary working location outside Drafts. Check the latest requested content before replacing the canonical file atomically; never delete the only usable draft first.
+- After successful replacement, delete any obsolete draft files positively identified as versions of that same email. Verify resolved paths remain within that email's Drafts location and the files have not changed since inspection. A requested revision authorizes this specific replacement and cleanup without another confirmation.
+- If Word locks the file, keep the prepared replacement outside Drafts, tell the user which document must be closed, and complete replacement after the lock clears. Do not create a second draft in Drafts or claim completion while the old version remains current.
+- Separate emails being drafted independently remain separate: each keeps its own current file and outgoing ID. Never group or delete drafts solely because recipient, subject, date or filename resembles another. Preserve attachments belonging to the email.
+- Update the existing file-index entry and record the revision briefly in chronology. Before presenting the draft, verify exactly one current email file remains for that task and link that file.
+- This rule concerns unfinished email drafts only. It does not authorize changes to sent correspondence, source evidence or other documents' version history. Claude Code and Codex use the same rule.
+
 ## Steps
 
 ### Step 1 — Gather Requirements
@@ -96,7 +109,7 @@ The descriptor must give the recipient enough to find the item on their own side
 
 ### Step 4 — Save as .docx
 
-Determine the filing destination:
+For an unfinished email, reuse its canonical path under the one-current-draft rule above. For a new email, determine the filing destination:
 - **Type 2**: `operations/Drafts/YYYY-MM-DD_Draft_<Description>.docx`
 - **Type 3**: `Cases/<CaseName>/Drafts/YYYY-MM-DD_Draft_<Description>.docx`
 
@@ -136,9 +149,9 @@ In practice, before writing the `.docx`:
 
 **If the user has explicitly asked for an internal ID to remain** (rare — e.g. an internal-only memo masquerading as an email), confirm the override in writing and note it in the user-facing summary. Default is always: scan, convert, save clean.
 
-### Step 5 — Assign OUT-### ID
+### Step 5 — Assign or Reuse OUT-### ID
 
-Assign the next available outgoing document ID:
+For a revision, reuse the existing outgoing ID and update its existing file-index entry. Assign the next available outgoing document ID only for a separate new email:
 - **Type 2**: `OUT-###` (next available number)
 - **Type 3**: `OUT-XX-###` where `XX` is the case prefix
 
@@ -160,12 +173,12 @@ Display the full draft text inline for user review.
 
 Ask the user:
 1. **Approve as-is** — draft is final, remains in Drafts/ until confirmed sent
-2. **Request changes** — specify what to revise, then regenerate the `.docx`
+2. **Request changes** — revise the same email, replace its canonical `.docx`, and remove obsolete versions under the one-current-draft rule before presenting it again
 3. **Create Gmail draft** — only if explicitly requested, use `gmail_create_draft` to also save it in Gmail
 4. **Discard** — delete the `.docx` and remove context file entries
 
 ## Output
 - Draft `.docx` path
-- OUT-### ID assigned
+- OUT-### ID assigned or reused
 - Context files updated
 - Full draft text displayed for review

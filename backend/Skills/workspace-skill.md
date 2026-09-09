@@ -221,6 +221,10 @@ During `Sweep`, if screenshot-like file exists without sibling `_transcript.txt`
 
 ## Outgoing Governance: Drafts -> Outbox
 
+### Unfinished email revisions
+
+Keep one current draft per email. A user-requested change replaces the same canonical file and reuses its outgoing ID; after verifying the replacement, delete superseded draft versions rather than retaining backups. Separate emails keep separate current files and IDs; attachments and sent records are outside this cleanup. The full procedure, including a locked Word file, is in `backend/Skills/draft-governance.md` and `backend/Commands/EmailDraft.md`. This email-specific owner decision of 2026-09-07 takes precedence over general version-preservation guidance.
+
 Rules:
 1. Keep all outgoing work in `operations/Drafts/` until user explicitly confirms sent.
    - This includes email and letter drafts. When the user asks to "draft" something, "save a draft," or "put it in drafts," always use `operations/Drafts/` — never create a root-level `Drafts/` folder, and never use Gmail drafts unless the user explicitly says "Gmail draft."
