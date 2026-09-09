@@ -51,7 +51,22 @@ Status: Drafting | Under Review | Sent | Locked
 Update the Status field whenever the document transitions between states.
 Add a chronology entry for each state transition.
 
-## Draft Versioning Protocol
+## One current draft per email
+
+Owner decision, 2026-09-07: during unfinished EmailDraft work, a requested change replaces the same email. Keep exactly one current email draft in its applicable Drafts folder.
+
+- Identify the email by its existing outgoing ID and drafting task. Changes to wording, subject, recipients or requested action do not by themselves create a new email or OUT ID.
+- Keep the canonical filename and reuse the OUT ID. Do not create `_prev_`, `_v2`, dated, backup or archived copies of the superseded unfinished email.
+- Prepare and read back the replacement in the workspace's approved temporary working location outside Drafts. Check the latest requested content before replacing the canonical file atomically; never delete the only usable draft first.
+- After successful replacement, delete any obsolete draft files positively identified as versions of that same email. Verify resolved paths remain within that email's Drafts location and the files have not changed since inspection. A requested revision authorizes this specific replacement and cleanup without another confirmation.
+- If Word locks the file, keep the prepared replacement outside Drafts, tell the user which document must be closed, and complete replacement after the lock clears. Do not create a second draft in Drafts or claim completion while the old version remains current.
+- Separate emails being drafted independently remain separate: each keeps its own current file and outgoing ID. Never group or delete drafts solely because recipient, subject, date or filename resembles another. Preserve attachments belonging to the email.
+- Update the existing file-index entry and record the revision briefly in chronology. Before presenting the draft, verify exactly one current email file remains for that task and link that file.
+- This rule concerns unfinished email drafts only. It does not authorize changes to sent correspondence, source evidence or other documents' version history. Claude Code and Codex use the same rule.
+
+## Other document draft versions
+
+The following existing version rules apply to non-email documents only. Unfinished email drafts follow the one-current-draft rule above.
 
 When a draft undergoes a substantial rewrite (not minor typo fixes):
 
@@ -107,7 +122,7 @@ If the `safety-guard.md` skill is active:
 ## Output
 
 - Document state tracked in FileAnalysis entries
-- Previous versions preserved with `_prev_` naming
+- Non-email document previous versions preserved with `_prev_` naming
 - Sent documents protected from modification
 - New drafts created from sent originals when edits are needed
 - Chronology entries for all state transitions
