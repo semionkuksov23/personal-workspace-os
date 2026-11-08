@@ -12,7 +12,7 @@
 >
 > These two are **never assumed, never defaulted, never chosen "because it's best for them"** —
 > even under "just transcribe it", ultracode, autonomous, or PermitAll instructions. A
-> pre-authorization to do *other* steps (e.g. "delete the original afterwards") does **not**
+> pre-authorization to do *other* steps (e.g. "delete" or "keep the original" — see Step 7) does **not**
 > authorize skipping these questions. (Language is also asked in Step 1.) Only the user's
 > explicit answers to the profile and diarization questions unlock script generation.
 
@@ -409,12 +409,12 @@ if still failing after 3 rounds → report to user, ask whether to proceed
 
 ## Step 7 — Delete Original Recording
 
-**Only after QC passes** (or user accepts remaining issues):
+**Standing owner rule (2026-11-05): unless the user specifies otherwise, the original recording is ALWAYS deleted once the transcription is satisfactory.** Do not ask for permission.
 
-1. **Default — explicitly ask permission.** Confirm with user: "QC passed. Delete original recording at `<path>`?" The original recording is the irreplaceable source; never delete it without a clear go-ahead.
-2. **Exception — pre-authorized deletion.** If the user already told you to delete the recording when they first invoked the command (e.g. "transcribe this and delete it after", "delete it once you're satisfied with the quality"), that standing instruction holds: once QC passes, **proceed to delete WITHOUT asking again** — do not re-prompt for something already authorized.
-3. This is a **Red operation** per safety-guard — always confirm UNLESS the user pre-authorized deletion (step 2) or PermitAll is active.
-4. If declined, or no authorization was given and the user does not respond, leave the file and note in chronology.
+1. **When — only once satisfactory.** "Satisfactory" means QC passed (Step 6), or the user accepted the remaining QC issues. Never earlier. If QC still fails after the fix loop and the user has not accepted the remaining issues, keep the recording, report, and ask.
+2. **Default — delete without asking.** Once satisfactory, delete the original recording the command was run on and note the deletion in chronology. This standing rule is the authorisation the safety-guard **Red operation** needs; do not re-prompt.
+3. **Exception — the user specified otherwise.** If the user asked to keep the original (e.g. "keep the recording", "don't delete it") or gave another instruction for it, follow that instead and note it in chronology.
+4. Delete only that recording — never other files beside it.
 
 ## Step 8 — File & Update Context
 
