@@ -1,5 +1,9 @@
 # Command: EmailDraft
 
+## Recipient-local greeting — mandatory
+
+Before using a time-of-day greeting, check the current time and infer the primary recipient's likely timezone from correspondence, signature, office location or known travel. Account for daylight saving and choose the greeting for the recipient's local time, not the agent's or sender's. Make a reasonable, evidence-based guess without routinely asking the user. If the timezone cannot reasonably be inferred, use a neutral greeting. Recheck before saving or revising the final draft; use a neutral group greeting when recipients' local times differ materially.
+
 ## Purpose
 Compose an outgoing email draft, save it locally as `.docx`, and update context files. Does NOT send or create a Gmail draft unless the user explicitly requests it.
 
